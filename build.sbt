@@ -19,8 +19,10 @@ val versions = new {
 def nativeLibraryPath = s"${sys.env.get("JAVA_LIBRARY_PATH") orElse sys.env.get("LD_LIBRARY_PATH") orElse sys.env.get("DYLD_LIBRARY_PATH") getOrElse "."}:."
 
 val commonSettings = Seq(
-  scalaVersion := "2.11.12",
-  crossScalaVersions := Seq("2.11.12", "2.12.12"),
+  //TODO(oss-athon): temporarily disable cross compile for speed
+  //scalaVersion := "2.11.12",
+  scalaVersion := "2.12.12",
+  //crossScalaVersions := Seq("2.11.12", "2.12.12"),
   organization := "org.polynote",
   publishMavenStyle := true,
   homepage := Some(url("https://polynote.org")),

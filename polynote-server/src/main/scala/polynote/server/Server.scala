@@ -38,6 +38,7 @@ class Server {
       ZIO.succeed(base.resolve(Paths.get(pieces.head, pieces.tail: _*)))
   }
 
+  // TODO(oss-athon): 1 make this dynamic so we can use a user/foo prefix for $BASE_URI
   private def indexFileContent(key: String): URIO[MainArgs with Config, URIO[Blocking, String]] =
     Config.access.flatMap { config =>
       ZIO.access[MainArgs](_.get.watchUI).flatMap { watchUI =>
@@ -136,20 +137,21 @@ class Server {
     wsKey: String
   ): ZManaged[BaseEnv with MainEnv with MainArgs, Throwable, uzhttp.server.Server] = Config.access.toManaged_.flatMap { config =>
     ZManaged.access[MainArgs](_.get[Args].watchUI).flatMap { watchUI =>
+      val defaultHeaders = ("Content-Security-Policy" -> "frame-ancestors 'self'") :: ("X-Steve-Server" -> "polynote") :: Nil
       val staticPath = if (watchUI) staticWatchPath else config.static.path.getOrElse(defaultStaticPath)
 
       def serveFile(name: String, req: Request) = {
         val mimeType = Server.MimeTypes.get(name)
 
         val gzipped = if (watchUI) ZIO.fail(()) else staticFilePath(s"$name.gz", staticPath).flatMap {
-          path => Response.fromPath(path, req, contentType = mimeType, headers = List("Content-Encoding" -> "gzip")).map(_.withCacheControl)
+          path => Response.fromPath(path, req, contentType = mimeType, headers = defaultHeaders ++ List("Content-Encoding" -> "gzip")).map(_.withCacheControl)
         }
 
         val nogzip = staticFilePath(name, staticPath).flatMap {
-          path => Response.fromPath(path, req, contentType = mimeType).map(_.withCacheControl)
+          path => Logging.error(s"Testing testing: ${name}, ${staticPath}") *> Response.fromPath(path, req, contentType = mimeType, headers = defaultHeaders).map(_.withCacheControl)
         }
 
-        val fromJar = Response.fromResource(name.drop(1), req, contentType = Server.MimeTypes.get(name)).map(_.withCacheControl)
+        val fromJar = Response.fromResource(name.drop(1), req, contentType = Server.MimeTypes.get(name), headers = defaultHeaders).map(_.withCacheControl)
 
         gzipped orElse nogzip orElse fromJar
       }.catchAll {
@@ -157,9 +159,12 @@ class Server {
         case err => Logging.error("Error serving file", err) *> ZIO.fail(InternalServerError("Error serving file", Some(err)))
       }
 
+      val jupeHack = "^/user/[^/]+".r
+
+      // TODO(oss-athon): 2 Figure out how to serve /user/foo/polystatic/app.js
       val serveStatic: PartialFunction[Request, ZIO[RequestEnv, HTTPError, Response]] = {
-        case req if req.uri.getPath == "/favicon.ico" => serveFile("/static/favicon.ico", req)
-        case req if req.uri.getPath startsWith "/static/" => serveFile(req.uri.getPath, req)
+        case req if jupeHack.replaceFirstIn(req.uri.getPath,"") == "/favicon.ico" => serveFile("/polystatic/favicon.ico", req)
+        case req if jupeHack.replaceFirstIn(req.uri.getPath,"") startsWith "/polystatic/" => serveFile(jupeHack.replaceFirstIn(req.uri.getPath, ""), req)
       }
 
       val staticFiles: ZManaged[RequestEnv, Nothing, PartialFunction[Request, ZIO[RequestEnv, HTTPError, Response]]] =
@@ -175,6 +180,9 @@ class Server {
         effectBlocking(Files.createDirectories(currentPath.resolve(config.storage.dir)))
       }
 
+
+      // TODO(oss-athon): 3 Add a loop in the javascript app to update the hub API with
+      // last updated info
       for {
         _             <- initNotebookStorageDir().toManaged_
         authRoutes    <- IdentityProvider.authRoutes.toManaged_
@@ -186,7 +194,7 @@ class Server {
         getIndex      <- indexFileContent(wsKey).toManaged_
         server        <- uzhttp.server.Server.builder(address).handleSome {
           case req@Request.WebsocketRequest(_, uri, _, _, inputFrames) =>
-            val path = uri.getPath
+            val path = jupeHack.replaceFirstIn(uri.getPath, "")
             val query = uri.getQuery
             if ((path startsWith "/ws") && (query == s"key=$wsKey")) {
               path.stripPrefix("/ws").stripPrefix("/") match {
@@ -195,15 +203,15 @@ class Server {
               }
             } else ZIO.fail(Forbidden("Missing or incorrect key"))
         }.handleSome {
-          case req if req.uri.getPath == "/" || req.uri.getPath == "" => getIndex.map(Response.html(_))
-          case req if req.uri.getPath startsWith "/notebook/" =>
+          case req if jupeHack.replaceFirstIn(req.uri.getPath, "") == "/" || jupeHack.replaceFirstIn(req.uri.getPath,"") == "" => getIndex.map(Response.html(_, headers = defaultHeaders))
+          case req if jupeHack.replaceFirstIn(req.uri.getPath,"") startsWith "/notebook/" =>
             req.uri.getQuery match {
-              case "download=true" => downloadFile(req.uri.getPath.stripPrefix("/notebook/"), req)
+              case "download=true" => downloadFile(jupeHack.replaceFirstIn(req.uri.getPath,"").stripPrefix("/notebook/"), req)
               case _ => getIndex.map(Response.html(_))
             }
         } .handleSome(staticHandler)
           .handleSome(authRoutes)
-          .logRequests(ServerLogger.noLogRequests)
+          .logRequests(ServerLogger.defaultRequestLogger)
           .logErrors((msg, err) => Logging.error(msg, err))
           .logInfo(msg => Logging.info(msg))
           .serve
