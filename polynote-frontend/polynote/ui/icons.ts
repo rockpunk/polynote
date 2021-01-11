@@ -28,7 +28,7 @@ export function loadIcon(name: string): Promise<SVGElement> {
     if (icons[name])
         return icons[name];
 
-    const promise = loadXML(`static/style/icons/fa/${name}.svg`).then(
+    const promise = loadXML(`polystatic/style/icons/fa/${name}.svg`).then(
         doc => document.importNode(doc.documentElement, true) as any as SVGElement
     );
 

@@ -2,7 +2,7 @@
 set -e -x
 
 build_less () {
- node_modules/.bin/lessc style/$1.less dist/static/style/$1.css
+ node_modules/.bin/lessc style/$1.less dist/polystatic/style/$1.css
 }
 
 build_less "styles"

@@ -48,9 +48,9 @@
     "webpack-cli": "3.3.11"
   },
   "scripts": {
-    "clean": "rm dist/static/*.js dist/static/*.map dist/static/*.gz dist/static/style/*.gz || echo Nothing to clean",
+    "clean": "rm dist/polystatic/*.js dist/polystatic/*.map dist/polystatic/*.gz dist/polystatic/style/*.gz || echo Nothing to clean",
     "build": "webpack --config webpack.config.js && ./build_style",
-    "dist": "rm -r dist/; webpack --config webpack.config.js --mode production && ./build_style && gzip -r -q dist && gunzip dist/static/index.html",
+    "dist": "rm -r dist/; webpack --config webpack.config.js --mode production && ./build_style && gzip -r -q dist && gunzip dist/polystatic/index.html",
     "watch": "webpack --config webpack.config.js --watch",
     "test": "jest"
   }

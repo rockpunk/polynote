@@ -8,7 +8,7 @@ export class ThemeHandler {
             if (pref.value) {
                 const el = document.getElementById("polynote-color-theme");
                 if (el) {
-                    el.setAttribute("href", `static/style/colors-${pref.value.toLowerCase()}.css`);
+                    el.setAttribute("href", `polystatic/style/colors-${pref.value.toLowerCase()}.css`);
                 }
                 monaco.editor.setTheme(`polynote-${pref.value.toLowerCase()}`);
             }

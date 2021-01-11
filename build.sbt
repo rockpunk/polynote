@@ -250,7 +250,7 @@ lazy val polynote = project.in(file(".")).aggregate(`polynote-env`, `polynote-ru
 
         IO.copy(resolvedFiles, overwrite = true, preserveLastModified = true, preserveExecutable = true)
 
-        IO.copyDirectory(file(".") / "polynote-frontend" / "dist" / "static", targetDir / "static")
+        IO.copyDirectory(file(".") / "polynote-frontend" / "dist" / "polystatic", targetDir / "static")
 
         val rootPath = crossTarget.value.toPath
         def relative(file: File): String = rootPath.relativize(file.toPath).toString

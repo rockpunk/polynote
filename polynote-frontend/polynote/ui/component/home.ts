@@ -14,7 +14,7 @@ export class Home {
             para([], [
                 "To get started, open a notebook by clicking on it in the Notebooks panel, or create a new notebook by\n" +
                 "             clicking the Create Notebook (",
-                span(['create-notebook', 'icon'], [img(["icon"], "static/style/icons/fa/plus-circle.svg")]), ") button."
+                span(['create-notebook', 'icon'], [img(["icon"], "polystatic/style/icons/fa/plus-circle.svg")]), ") button."
             ]),
             h3([], ["Recent Notebooks"]),
             recentNotebooks

@@ -30,10 +30,16 @@ class Server {
   private lazy val staticWatchPath = currentPath.resolve(s"polynote-frontend/dist")
   private lazy val defaultStaticPath = currentPath
 
+  private lazy val jupeHack = "^/user/[^/]+".r
+
   private def staticFilePath(filename: String, base: Path): IO[HTTPError, java.nio.file.Path] = {
-    val pieces = filename.split('/').drop(1).filterNot(_ == "..")
+    // base = /opt/polynote
+    // filename = /user/foo/polystatic/styles/style.css
+    val f = jupeHack.replaceFirstIn(filename, "")
+    // f = /polystatic/styles/style.css
+    val pieces = f.split('/').drop(1).filterNot(_ == "..")
     if (pieces.isEmpty)
-      ZIO.fail(NotFound(filename))
+      ZIO.fail(HTTPError.BadRequest(s"For some crazy ass reason, couldn't find ${filename} in ${base}"))
     else
       ZIO.succeed(base.resolve(Paths.get(pieces.head, pieces.tail: _*)))
   }
@@ -43,6 +49,7 @@ class Server {
     Config.access.flatMap { config =>
       ZIO.access[MainArgs](_.get.watchUI).flatMap { watchUI =>
         val staticUri = config.static.url.map(_.toString).getOrElse("static")
+        // defaults to docker's WORKDIR = /opt/polynote
         val staticPath = if (watchUI) staticWatchPath else config.static.path.getOrElse(defaultStaticPath)
 
         val is = effectBlocking {
@@ -148,32 +155,35 @@ class Server {
         }
 
         val nogzip = staticFilePath(name, staticPath).flatMap {
-          path => Logging.error(s"Testing testing: ${name}, ${staticPath}") *> Response.fromPath(path, req, contentType = mimeType, headers = defaultHeaders).map(_.withCacheControl)
+          path => Response.fromPath(path, req, contentType = mimeType, headers = defaultHeaders).map(_.withCacheControl)
         }
 
         val fromJar = Response.fromResource(name.drop(1), req, contentType = Server.MimeTypes.get(name), headers = defaultHeaders).map(_.withCacheControl)
 
         gzipped orElse nogzip orElse fromJar
       }.catchAll {
-        case err: HTTPError => ZIO.fail(err)
+        case err: HTTPError => ZIO.fail(err) //ZIO.succeed(Response.html(err.toString(), headers=List("Content-Type"->"application/text")))
         case err => Logging.error("Error serving file", err) *> ZIO.fail(InternalServerError("Error serving file", Some(err)))
       }
 
-      val jupeHack = "^/user/[^/]+".r
 
-      // TODO(oss-athon): 2 Figure out how to serve /user/foo/polystatic/app.js
+      // TODO(oss-athon): 2 Figure out how to serve /user/foo/polystatic/app.js -
+      // DONE!!!
       val serveStatic: PartialFunction[Request, ZIO[RequestEnv, HTTPError, Response]] = {
         case req if jupeHack.replaceFirstIn(req.uri.getPath,"") == "/favicon.ico" => serveFile("/polystatic/favicon.ico", req)
-        case req if jupeHack.replaceFirstIn(req.uri.getPath,"") startsWith "/polystatic/" => serveFile(jupeHack.replaceFirstIn(req.uri.getPath, ""), req)
+        case req if jupeHack.replaceFirstIn(req.uri.getPath,"") startsWith "/polystatic/" => {
+          serveFile(req.uri.getPath, req)
+        }
       }
 
       val staticFiles: ZManaged[RequestEnv, Nothing, PartialFunction[Request, ZIO[RequestEnv, HTTPError, Response]]] =
         if (watchUI) {
           ZManaged.succeed(serveStatic)
         } else {
-          Response.permanentCache
-            .handleSome(serveStatic)
-            .build
+          ZManaged.succeed(serveStatic)
+//          Response.permanentCache
+//            .handleSome(serveStatic)
+//            .build
         }
       
       def initNotebookStorageDir(): ZIO[Blocking, Throwable, Path] = {
@@ -203,13 +213,13 @@ class Server {
               }
             } else ZIO.fail(Forbidden("Missing or incorrect key"))
         }.handleSome {
-          case req if jupeHack.replaceFirstIn(req.uri.getPath, "") == "/" || jupeHack.replaceFirstIn(req.uri.getPath,"") == "" => getIndex.map(Response.html(_, headers = defaultHeaders))
-          case req if jupeHack.replaceFirstIn(req.uri.getPath,"") startsWith "/notebook/" =>
+          case req if jupeHack.replaceFirstIn(req.uri.getPath, "") == "/" || req.uri.getPath == "" => getIndex.map(Response.html(_, headers = defaultHeaders))
+          case req if jupeHack.replaceFirstIn(req.uri.getPath, "") startsWith "/notebook/" =>
             req.uri.getQuery match {
               case "download=true" => downloadFile(jupeHack.replaceFirstIn(req.uri.getPath,"").stripPrefix("/notebook/"), req)
               case _ => getIndex.map(Response.html(_))
             }
-        } .handleSome(staticHandler)
+          }.handleSome(staticHandler)
           .handleSome(authRoutes)
           .logRequests(ServerLogger.defaultRequestLogger)
           .logErrors((msg, err) => Logging.error(msg, err))

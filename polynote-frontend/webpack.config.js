@@ -7,9 +7,9 @@ module.exports = {
   entry: './polynote/main.ts',
   devtool: 'source-map',
   output: {
-    path: path.resolve(__dirname, 'dist/static'),
+    path: path.resolve(__dirname, 'dist/polystatic'),
     filename: 'app.[contenthash].js',
-    publicPath: 'static/'
+    publicPath: 'polystatic/'
   },
   module: {
     rules: [{
